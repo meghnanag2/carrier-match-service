@@ -41,22 +41,6 @@ inline on the request.
   enough to build a real REST API here — no Express, no Flask/FastAPI, no
   Spring Boot. Worth knowing what a language's stdlib can do unassisted.
 
-**Where I'd honestly still reach for something else:**
-
-- **Python**, without hesitation, for anything ML/data-related — this
-  project's matching logic is simple arithmetic; if it needed real modeling,
-  Go's ecosystem there is nowhere near PyTorch/scikit-learn.
-- **JavaScript/TypeScript**, if the project needed a frontend sharing types
-  or code with the backend — Go doesn't help there at all.
-- **Java**, for something needing its more mature ecosystem of enterprise
-  tooling (this is closer to my Persistent Systems experience — Spring Boot,
-  JPA — than anything this project needed).
-
-The honest reason to build this in Go specifically was to get real,
-hands-on concurrency experience in a language built around it as a first-
-class feature, rather than bolting concurrency onto a language where it's
-more of an afterthought.
-
 ## How a request flows through the service
 
 ```mermaid
