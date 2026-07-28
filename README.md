@@ -22,47 +22,6 @@ This wasn't the "safe" choice — it's a deliberate one, and it's worth being
 honest about the actual trade-offs rather than just praising Go in the
 abstract.
 
-**Where Go genuinely won out for this specific project:**
-
-- **Concurrency without the usual overhead.** The whole point of `worker.go`
-  is a pool of workers processing match jobs off the request path. In Java,
-  that means threads (heavyweight, OS-scheduled — though virtual threads in
-  newer JDKs close this gap) or a reactive framework's added complexity. In
-  Python, the GIL means "concurrent" often isn't actually parallel for
-  CPU-bound work, and `asyncio` requires the whole call stack to be
-  async-aware. Go's goroutines are cheap enough to spin up thousands of them
-  without thinking about it, and channels give a genuinely simple way for
-  the worker pool to hand results back — no thread pool tuning, no
-  `async`/`await` coloring problem.
-- **A single static binary, nothing else installed.** `go build` produces
-  one executable. No JVM to provision, no `node_modules`, no Python
-  interpreter/virtualenv version drift. For a small backend service meant to
-  run in a container, that's a genuinely simpler deployment story than any
-  of the three languages I use day to day.
-- **Static typing that's stricter than JavaScript, lighter-weight than Java.**
-  Compile-time type checking without Java's verbosity (no interfaces-for-
-  everything ceremony) — closer to how Python *feels* to write, but with the
-  bugs Python only catches at runtime caught before the binary even builds.
-- **Standard library that doesn't need a framework.** `net/http` alone was
-  enough to build a real REST API here — no Express, no Flask/FastAPI, no
-  Spring Boot. Worth knowing what a language's stdlib can do unassisted.
-
-**Where I'd honestly still reach for something else:**
-
-- **Python**, without hesitation, for anything ML/data-related — this
-  project's matching logic is simple arithmetic; if it needed real modeling,
-  Go's ecosystem there is nowhere near PyTorch/scikit-learn.
-- **JavaScript/TypeScript**, if the project needed a frontend sharing types
-  or code with the backend — Go doesn't help there at all.
-- **Java**, for something needing its more mature ecosystem of enterprise
-  tooling (this is closer to my Persistent Systems experience — Spring Boot,
-  JPA — than anything this project needed).
-
-The honest reason to build this in Go specifically was to get real,
-hands-on concurrency experience in a language built around it as a first-
-class feature, rather than bolting concurrency onto a language where it's
-more of an afterthought.
-
 ## How a request flows through the service
 
 ```mermaid
