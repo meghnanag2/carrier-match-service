@@ -39,6 +39,12 @@ type Store interface {
 	// fail independently of the atomic booking guarantee Dispatch provides
 	// — see README for why these aren't in one transaction.
 	UpdateShipmentPayment(shipmentID, paymentIntentID, paymentStatus string) error
+
+	// ReleaseCarrier sets a carrier back to available — the counterpart to
+	// the availability flip inside Dispatch. Called on cancellation, so a
+	// carrier freed by a cancelled shipment can be matched and dispatched
+	// again instead of staying permanently marked unavailable.
+	ReleaseCarrier(carrierID string) error
 }
 
 // MemStore is a simple mutex-guarded in-memory store.
@@ -165,5 +171,18 @@ func (s *MemStore) UpdateShipmentPayment(shipmentID, paymentIntentID, paymentSta
 	sh.PaymentIntentID = paymentIntentID
 	sh.PaymentStatus = paymentStatus
 	s.shipments[shipmentID] = sh
+	return nil
+}
+
+func (s *MemStore) ReleaseCarrier(carrierID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	carrier, ok := s.carriers[carrierID]
+	if !ok {
+		return ErrNotFound
+	}
+	carrier.IsAvailable = true
+	s.carriers[carrierID] = carrier
 	return nil
 }

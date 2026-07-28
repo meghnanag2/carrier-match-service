@@ -294,6 +294,17 @@ func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Free the carrier back up on cancellation — the bug the cancellation
+	// flow diagram in README.md surfaced: without this, a cancelled
+	// shipment's carrier stayed permanently marked unavailable. Only
+	// relevant if the shipment had actually been dispatched to a carrier
+	// (CarrierID is empty for a shipment cancelled while still "pending").
+	if req.Status == StatusCancelled && shipment.CarrierID != "" {
+		if err := s.store.ReleaseCarrier(shipment.CarrierID); err != nil {
+			log.Printf("failed to release carrier %s for cancelled shipment %s: %v", shipment.CarrierID, shipmentID, err)
+		}
+	}
+
 	updated, _ := s.store.GetShipment(shipmentID)
 	writeJSON(w, http.StatusOK, updated)
 }

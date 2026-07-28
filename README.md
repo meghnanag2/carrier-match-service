@@ -25,6 +25,226 @@ Addresses are converted to coordinates via a real call to a public geocoding
 API, and matching happens asynchronously through a worker pool rather than
 inline on the request.
 
+## Full system architecture
+
+Every component in the system and how they connect — the SQLite file, the
+worker pool, and both external APIs (Nominatim, Stripe):
+
+```mermaid
+flowchart TB
+    subgraph Client Layer
+        FE[TypeScript Frontend<br/>frontend/]
+        Curl[curl / seed.sh]
+    end
+
+    subgraph "carrier-match-service (Go)"
+        CORS[CORS middleware<br/>cors.go]
+        Handlers[HTTP Handlers<br/>handlers.go]
+        Matcher[Matcher<br/>matcher.go + pricing.go]
+        StateMachine[State Machine<br/>statemachine.go]
+        Pool[Worker Pool<br/>worker.go]
+        GeoCache[Geocode Cache<br/>cache.go]
+    end
+
+    subgraph Persistence
+        SQLite[(SQLite File<br/>sqlite_store.go)]
+    end
+
+    subgraph "External APIs (real, over the internet)"
+        Nominatim[OpenStreetMap<br/>Nominatim API]
+        Stripe[Stripe API<br/>test mode]
+    end
+
+    FE -->|fetch, CORS-enabled| CORS
+    Curl -->|HTTP| CORS
+    CORS --> Handlers
+
+    Handlers -->|geocode addresses| GeoCache
+    GeoCache -->|cache miss| Nominatim
+    Nominatim -->|lat/lon| GeoCache
+
+    Handlers -->|submit match job| Pool
+    Pool -->|read carriers/shipment| SQLite
+    Pool --> Matcher
+    Matcher -->|ranked results + price| Pool
+    Pool -->|result channel| Handlers
+
+    Handlers -->|validate transition| StateMachine
+    Handlers -->|atomic dispatch| SQLite
+    Handlers -->|authorize/capture/cancel| Stripe
+    Stripe -->|payment status| Handlers
+    Handlers -->|persist payment status| SQLite
+
+    Handlers -->|JSON responses| CORS
+```
+
+## User flows for every new feature
+
+Each of the flows below is a real, separate path through the system —
+drawn individually rather than folded into one diagram, since dispatch,
+delivery, and cancellation each trigger genuinely different behavior
+(especially around payment).
+
+### 1. Registering a shipper and carriers
+
+```mermaid
+sequenceDiagram
+    participant U as User (frontend or curl)
+    participant H as Handlers
+    participant G as Geocoder + Cache
+    participant N as Nominatim API
+    participant D as SQLite
+
+    U->>H: POST /shippers {name, email}
+    H->>D: SaveShipper()
+    D-->>H: shipper saved
+    H-->>U: 201 Created
+
+    U->>H: POST /carriers {name, address, capacity_lbs}
+    H->>G: GeocodeAddress(address)
+    alt cache hit
+        G-->>H: cached lat/lon
+    else cache miss
+        G->>N: GET /search?q=address
+        N-->>G: lat/lon
+        G-->>H: lat/lon (now cached)
+    end
+    H->>D: SaveCarrier(is_available=true)
+    D-->>H: carrier saved
+    H-->>U: 201 Created
+```
+
+### 2. Creating a shipment and getting ranked matches
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant H as Handlers
+    participant G as Geocoder + Cache
+    participant W as Worker Pool
+    participant M as Matcher + Pricing
+    participant D as SQLite
+
+    U->>H: POST /shipments {shipper_id, origin_address, weight_lbs}
+    H->>G: GeocodeAddress(origin_address)
+    G-->>H: lat/lon
+    H->>D: SaveShipment(status=pending)
+    H-->>U: 201 Created
+
+    U->>H: GET /shipments/{id}/matches
+    H->>W: Submit(shipmentID)
+    W->>D: ListCarriers()
+    D-->>W: all carriers
+    W->>M: RankCarriers() — filters unavailable/undersized,<br/>scores by distance, estimates price
+    M-->>W: ranked MatchResults
+    W-->>H: results (via channel, 15s timeout)
+    H-->>U: 200 OK, ranked carriers + prices
+```
+
+### 3. Dispatch — booking a carrier and authorizing payment
+
+The flow where correctness actually matters: two concurrent dispatch
+requests for the same carrier must not both succeed.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant H as Handlers
+    participant SM as State Machine
+    participant D as SQLite (transaction)
+    participant S as Stripe API
+
+    U->>H: POST /shipments/{id}/dispatch {carrier_id}
+    H->>SM: validateTransition(pending, dispatched)
+    SM-->>H: OK
+
+    H->>D: BEGIN TRANSACTION
+    H->>D: UPDATE carriers SET is_available=0<br/>WHERE id=? AND is_available=1
+    alt rows affected = 0 (lost the race, or already booked)
+        D-->>H: ErrCarrierUnavailable
+        H-->>U: 409 Conflict
+    else rows affected = 1 (won the race)
+        H->>D: UPDATE shipments SET carrier_id, price, status=dispatched
+        H->>D: COMMIT
+        D-->>H: dispatch succeeded
+
+        H->>S: AuthorizePayment(price, shipmentID)<br/>capture_method=manual, confirm=true
+        alt payment succeeds
+            S-->>H: PaymentIntent {id, status: requires_capture}
+            H->>D: UpdateShipmentPayment(intent_id, status)
+        else payment fails
+            S-->>H: error
+            Note over H: Logged, not fatal —<br/>dispatch already committed
+        end
+        H-->>U: 200 OK, dispatched shipment
+    end
+```
+
+### 4. Delivery — capturing the payment hold
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant H as Handlers
+    participant SM as State Machine
+    participant D as SQLite
+    participant S as Stripe API
+
+    U->>H: PATCH /shipments/{id}/status {status: delivered}
+    H->>D: GetShipment(id)
+    D-->>H: shipment (status=in_transit, has payment_intent_id)
+    H->>SM: validateTransition(in_transit, delivered)
+    SM-->>H: OK
+    H->>D: UpdateShipmentStatus(delivered)
+
+    H->>S: CapturePayment(payment_intent_id)
+    S-->>H: PaymentIntent {status: succeeded}
+    H->>D: UpdateShipmentPayment(id, succeeded)
+
+    H-->>U: 200 OK, shipment delivered, payment captured
+```
+
+### 5. Cancellation — releasing the payment hold
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant H as Handlers
+    participant SM as State Machine
+    participant D as SQLite
+    participant S as Stripe API
+
+    U->>H: PATCH /shipments/{id}/status {status: cancelled}
+    H->>D: GetShipment(id)
+    D-->>H: shipment (status=dispatched or in_transit)
+    H->>SM: validateTransition(current, cancelled)
+    SM-->>H: OK
+    H->>D: UpdateShipmentStatus(cancelled)
+
+    alt shipment had a payment hold
+        H->>S: CancelPayment(payment_intent_id)
+        S-->>H: PaymentIntent {status: canceled}
+        H->>D: UpdateShipmentPayment(id, canceled)
+    end
+
+    alt shipment had an assigned carrier
+        H->>D: ReleaseCarrier(carrier_id) — is_available back to true
+    end
+
+    H-->>U: 200 OK, shipment cancelled
+```
+
+**Drawing this flow out is what caught a real bug**, before it shipped
+unnoticed: the first version of `handleUpdateStatus` released the payment
+hold on cancellation but never freed the carrier back up —
+`is_available` stayed `false` forever, so a cancelled shipment's carrier
+could never be matched or dispatched again. Fixed by adding
+`ReleaseCarrier()` to the `Store` interface (implemented in both
+`MemStore` and `SQLiteStore`) and calling it here. Left as a visible
+example of why drawing the actual flow surfaces gaps that are easy to miss
+reading each function in isolation — the diagram above is the corrected
+version, not the original one that had the bug.
+
 ## Why Go for this, when I mostly work in Java, JavaScript, and Python
 
 This wasn't the "safe" choice — it's a deliberate one, and it's worth being

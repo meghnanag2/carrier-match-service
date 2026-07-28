@@ -314,3 +314,23 @@ func boolToInt(b bool) int {
 	}
 	return 0
 }
+
+// ReleaseCarrier is the counterpart to Dispatch's availability flip — sets
+// a carrier back to available. Called on cancellation (handlers.go), which
+// is what fixes the gap the cancellation flow diagram in README.md surfaced:
+// without this, a cancelled shipment's carrier stayed permanently
+// unavailable, unable to be matched or dispatched again.
+func (s *SQLiteStore) ReleaseCarrier(carrierID string) error {
+	result, err := s.db.Exec(`UPDATE carriers SET is_available = 1 WHERE id = ?`, carrierID)
+	if err != nil {
+		return fmt.Errorf("releasing carrier: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking release result: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
