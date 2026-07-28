@@ -16,13 +16,7 @@ Addresses are converted to coordinates via a real call to a public geocoding
 API, and matching happens asynchronously through a worker pool rather than
 inline on the request.
 
-## Why Go for this, when I mostly work in Java, JavaScript, and Python
-
-This wasn't the "safe" choice — it's a deliberate one, and it's worth being
-honest about the actual trade-offs rather than just praising Go in the
-abstract.
-
-**Where Go genuinely won out for this specific project:**
+## Why go was Useful
 
 - **Concurrency without the usual overhead.** The whole point of `worker.go`
   is a pool of workers processing match jobs off the request path. In Java,
