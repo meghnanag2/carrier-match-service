@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 200" width="100%" height="auto">
+  <defs>
+    <!-- Subtle gradient for the modern tech bar -->
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0d9488" />
+    </linearGradient>
+  </defs>
+
+  <!-- Clean White / Off-White Background with Rounded Corners -->
+  <rect width="1200" height="200" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" />
+
+  <!-- Top Accent Border Bar -->
+  <rect x="0" y="0" width="1200" height="6" rx="3" fill="url(#accentGrad)" />
+
+  <!-- Emoji / Truck Graphic Badge Container -->
+  <g transform="translate(60, 50)">
+    <rect width="90" height="90" rx="16" fill="#f0f9ff" stroke="#bae6fd" stroke-width="2" />
+    <!-- Large Emoji representation -->
+    <text x="45" y="60" font-size="44" text-anchor="middle">🚚</text>
+  </g>
+
+  <!-- Title & Subtitle Section -->
+  <g transform="translate(175, 0)">
+    <!-- Go Badge -->
+    <rect x="0" y="52" width="48" height="22" rx="4" fill="#00add8" />
+    <text x="24" y="67" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="bold" text-anchor="middle">GO</text>
+
+    <!-- Main Title -->
+    <text x="60" y="70" fill="#0f172a" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="28" font-weight="800" letter-spacing="-0.5">carrier-match-service</text>
+
+    <!-- Subtitle -->
+    <text x="0" y="112" fill="#475569" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="500">
+      A high-performance freight matching backend built in Go with atomic dispatches, worker pools, and Stripe integration.
+    </text>
+
+    <!-- Tech Stack Mini Badges -->
+    <g transform="translate(0, 135)">
+      <!-- SQLite -->
+      <rect x="0" y="0" width="75" height="24" rx="12" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" />
+      <text x="37.5" y="16" fill="#334155" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="600" text-anchor="middle">SQLite</text>
+
+      <!-- Worker Pool -->
+      <rect x="83" y="0" width="95" height="24" rx="12" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" />
+      <text x="130.5" y="16" fill="#334155" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="600" text-anchor="middle">Worker Pool</text>
+
+      <!-- Stripe -->
+      <rect x="186" y="0" width="90" height="24" rx="12" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" />
+      <text x="231" y="16" fill="#334155" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="600" text-anchor="middle">Stripe Test</text>
+
+      <!-- TypeScript Frontend -->
+      <rect x="284" y="0" width="95" height="24" rx="12" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" />
+      <text x="331.5" y="16" fill="#334155" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="600" text-anchor="middle">TypeScript</text>
+    </g>
+  </g>
+</svg>
