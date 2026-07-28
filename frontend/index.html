@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Carrier Match Service</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <h1>Carrier Match Service</h1>
+  <p class="subtitle">Backend must be running at <code>localhost:8080</code>.</p>
+
+  <div class="grid">
+    <section>
+      <h2>1. Register a Carrier</h2>
+      <form id="carrier-form">
+        <label>Name <input type="text" name="name" required /></label>
+        <label>Address <input type="text" name="address" placeholder="Chicago, IL" required /></label>
+        <label>Capacity (lbs) <input type="number" name="capacity_lbs" required /></label>
+        <button type="submit">Add Carrier</button>
+      </form>
+      <p id="carrier-status"></p>
+      <h3>Registered carriers</h3>
+      <ul id="carrier-list"></ul>
+    </section>
+
+    <section>
+      <h2>2. Register a Shipment</h2>
+      <form id="shipment-form">
+        <label>Origin address <input type="text" name="origin_address" placeholder="Denver, CO" required /></label>
+        <label>Weight (lbs) <input type="number" name="weight_lbs" required /></label>
+        <button type="submit">Add Shipment</button>
+      </form>
+      <p id="shipment-status"></p>
+      <p id="shipment-id-display"></p>
+    </section>
+
+    <section>
+      <h2>3. Find Matches</h2>
+      <form id="match-form">
+        <label>Shipment ID <input type="text" name="shipment_id" placeholder="Leave blank to use the last shipment created" /></label>
+        <button type="submit">Get Matches</button>
+      </form>
+      <div id="match-results"></div>
+    </section>
+  </div>
+
+  <script type="module" src="dist/main.js"></script>
+</body>
+</html>
