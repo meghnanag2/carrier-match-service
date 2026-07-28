@@ -235,12 +235,3 @@ rate-limits you):
 go test ./...
 ```
 
-## Why the boundaries are where they are
-
-Every "simplified" row in the table above was a deliberate choice to keep
-the finished parts of this project genuinely correct and tested, rather than
-spreading the same effort across a much larger, partly-untested surface
-area. The `Store` interface and the worker pool's `Submit()` function are
-the two seams built specifically for extending this later — swapping in
-Postgres or a real queue means implementing against those, not rewriting the
-rest of the app.
