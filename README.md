@@ -234,64 +234,6 @@ sequenceDiagram
     H-->>U: 200 OK, shipment cancelled
 ```
 
-**Drawing this flow out is what caught a real bug**, before it shipped
-unnoticed: the first version of `handleUpdateStatus` released the payment
-hold on cancellation but never freed the carrier back up —
-`is_available` stayed `false` forever, so a cancelled shipment's carrier
-could never be matched or dispatched again. Fixed by adding
-`ReleaseCarrier()` to the `Store` interface (implemented in both
-`MemStore` and `SQLiteStore`) and calling it here. Left as a visible
-example of why drawing the actual flow surfaces gaps that are easy to miss
-reading each function in isolation — the diagram above is the corrected
-version, not the original one that had the bug.
-
-## Why Go for this, when I mostly work in Java, JavaScript, and Python
-
-This wasn't the "safe" choice — it's a deliberate one, and it's worth being
-honest about the actual trade-offs rather than just praising Go in the
-abstract.
-
-**Where Go genuinely won out for this specific project:**
-
-- **Concurrency without the usual overhead.** The whole point of `worker.go`
-  is a pool of workers processing match jobs off the request path. In Java,
-  that means threads (heavyweight, OS-scheduled — though virtual threads in
-  newer JDKs close this gap) or a reactive framework's added complexity. In
-  Python, the GIL means "concurrent" often isn't actually parallel for
-  CPU-bound work, and `asyncio` requires the whole call stack to be
-  async-aware. Go's goroutines are cheap enough to spin up thousands of them
-  without thinking about it, and channels give a genuinely simple way for
-  the worker pool to hand results back — no thread pool tuning, no
-  `async`/`await` coloring problem.
-- **A single static binary, nothing else installed.** `go build` produces
-  one executable. No JVM to provision, no `node_modules`, no Python
-  interpreter/virtualenv version drift. For a small backend service meant to
-  run in a container, that's a genuinely simpler deployment story than any
-  of the three languages I use day to day.
-- **Static typing that's stricter than JavaScript, lighter-weight than Java.**
-  Compile-time type checking without Java's verbosity (no interfaces-for-
-  everything ceremony) — closer to how Python *feels* to write, but with the
-  bugs Python only catches at runtime caught before the binary even builds.
-- **Standard library that doesn't need a framework.** `net/http` alone was
-  enough to build a real REST API here — no Express, no Flask/FastAPI, no
-  Spring Boot. Worth knowing what a language's stdlib can do unassisted.
-
-**Where I'd honestly still reach for something else:**
-
-- **Python**, without hesitation, for anything ML/data-related — this
-  project's matching logic is simple arithmetic; if it needed real modeling,
-  Go's ecosystem there is nowhere near PyTorch/scikit-learn.
-- **JavaScript/TypeScript**, if the project needed a frontend sharing types
-  or code with the backend — Go doesn't help there at all.
-- **Java**, for something needing its more mature ecosystem of enterprise
-  tooling (this is closer to my Persistent Systems experience — Spring Boot,
-  JPA — than anything this project needed).
-
-The honest reason to build this in Go specifically was to get real,
-hands-on concurrency experience in a language built around it as a first-
-class feature, rather than bolting concurrency onto a language where it's
-more of an afterthought.
-
 ## How a request flows through the service
 
 ```mermaid
@@ -396,7 +338,7 @@ erDiagram
 the current `Carrier` and `Shipment` records, which is why it's drawn here as
 a relationship rather than a table with foreign keys.
 
-## Closing the business gaps: shipper, dispatch, pricing, tracking, payment
+## Additional Actors : shipper, dispatch, pricing, tracking, payment
 
 Earlier versions of this project only modeled the matching step — ranking
 carriers, with nothing that actually booked one. Five real gaps got closed:
@@ -433,22 +375,6 @@ no_match`). `PATCH /shipments/{id}/status` rejects anything not on that
 list with a 409 — a shipment can no longer silently jump from `delivered`
 back to `pending`.
 
-Worth knowing before relying on this for anything beyond a demo:
-
-## What's actually real vs. simplified
-
-| Piece | What's here | What a production version would need |
-|---|---|---|
-| Geocoding | Real call to OpenStreetMap's Nominatim API, with an in-memory cache in front of it (`cache.go`) so repeat lookups don't re-hit the rate-limited API | A shared cache (Redis) if this ran as multiple instances — a single process's in-memory cache doesn't help a second instance |
-| Storage | Real SQLite file (`sqlite_store.go`), persists across restarts. In-memory `MemStore` still available for disposable test runs | Postgres, behind the same `Store` interface, if this ever needed to run as more than one instance |
-| Async matching | Real goroutines + channels (`worker.go`) | A durable queue (Kafka/Redis) — jobs here are lost on restart |
-| Scoring | Distance + capacity + availability, with a placeholder price estimate (`matcher.go`, `pricing.go`) | Would also weigh carrier reliability, appointment availability; pricing formula is illustrative, not real market rates |
-| Booking | Real, atomic dispatch (`Dispatch()` in `sqlite_store.go`) — prevents double-booking via conditional `UPDATE` | Nothing missing at this project's scale — a real system might add idempotency keys for client retries (see the CRD doc for that pattern) |
-| Payment | Real Stripe test-mode integration (`payment.go`) — authorizes on dispatch, captures on delivery, cancels a hold if the shipment is cancelled. No real money ever moves | A live Stripe key for production; this project should never be pointed at one |
-| Frontend | Real, type-checked TypeScript (`frontend/`) — no framework, compiled with `tsc` | Works locally; no build pipeline/bundler/deployment story beyond that |
-| Auth | None | JWT or API keys before this is exposed to anyone but you |
-| IDs | Random 16-byte hex, not RFC 4122 UUIDs (`id.go`) | Swap in `github.com/google/uuid` if strict UUID format matters |
-
 ## Payment: real Stripe integration, test mode, genuinely free
 
 `payment.go` calls Stripe's REST API directly with `net/http` — **not** the
@@ -467,12 +393,8 @@ directly instead of pulling in a geocoding library.
 - **Cancelled** (after being dispatched) → `CancelPayment()` releases the
   hold instead of charging it.
 
-**Why authorization and capture are separate API calls, not one:** this
-mirrors how freight brokers commonly handle payment in the real world —
-funds are held at dispatch to guarantee the carrier gets paid, but not
-actually captured until the load is confirmed delivered.
 
-**Genuinely free and testable, not a hand-wave:**
+**External APIs:**
 - Create a free Stripe account (no card required) and grab a **test** secret
   key (starts with `sk_test_`) from
   [dashboard.stripe.com/test/apikeys](https://dashboard.stripe.com/test/apikeys)
@@ -493,7 +415,7 @@ Without that env var set, the server still runs fine — dispatch and
 delivery just skip the payment steps (logged, not fatal). `main.go` checks
 for the key and logs which mode it's in on startup.
 
-**Honest limitation:** payment authorization is a separate API call from
+**Limitation:** payment authorization is a separate API call from
 `Dispatch()`, not inside the same database transaction. If the Stripe call
 fails after a successful dispatch, the shipment stays validly dispatched
 (carrier correctly booked) with no payment hold recorded — logged as an
@@ -502,7 +424,7 @@ design might roll back the dispatch entirely on payment failure; this
 project treats "carrier booked, payment needs a retry" as more realistic
 than un-booking a carrier over a transient API hiccup.
 
-## Why there's a cache, specifically
+## Cache
 
 Nominatim's usage policy caps requests at roughly 1/second per client. The
 same address gets geocoded more than once in normal use of this app — a
@@ -635,13 +557,3 @@ rate-limits you):
 ```bash
 go test ./...
 ```
-
-## Why the boundaries are where they are
-
-Every "simplified" row in the table above was a deliberate choice to keep
-the finished parts of this project genuinely correct and tested, rather than
-spreading the same effort across a much larger, partly-untested surface
-area. The `Store` interface and the worker pool's `Submit()` function are
-the two seams built specifically for extending this later — swapping in
-Postgres or a real queue means implementing against those, not rewriting the
-rest of the app.
