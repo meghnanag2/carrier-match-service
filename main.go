@@ -3,10 +3,22 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 )
 
 func main() {
-	store := NewMemStore()
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "carrier_match.db"
+	}
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		log.Fatalf("failed to open database: %v", err)
+	}
+	defer store.Close()
+	log.Printf("using SQLite database at %s (data persists across restarts)", dbPath)
+
 	geocoder := NewGeocoder()
 	workers := NewMatchWorkerPool(store, 4 /* workers */, 100 /* queue size */)
 	server := NewServer(store, geocoder, workers)

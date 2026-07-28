@@ -1,6 +1,6 @@
 # carrier-match-service
 
-A Go backend service that matches and scores freight carriers against
+A small Go backend service that matches and scores freight carriers against
 shipments. Built as a hands-on Go project, shaped around a real problem a
 freight/logistics marketplace backend has to solve: given a shipment, which
 of your available carriers can actually take it, and which is the best fit?
@@ -16,7 +16,13 @@ Addresses are converted to coordinates via a real call to a public geocoding
 API, and matching happens asynchronously through a worker pool rather than
 inline on the request.
 
-## Why go was Useful
+## Why Go for this, when I mostly work in Java, JavaScript, and Python
+
+This wasn't the "safe" choice — it's a deliberate one, and it's worth being
+honest about the actual trade-offs rather than just praising Go in the
+abstract.
+
+**Where Go genuinely won out for this specific project:**
 
 - **Concurrency without the usual overhead.** The whole point of `worker.go`
   is a pool of workers processing match jobs off the request path. In Java,
@@ -41,14 +47,32 @@ inline on the request.
   enough to build a real REST API here — no Express, no Flask/FastAPI, no
   Spring Boot. Worth knowing what a language's stdlib can do unassisted.
 
+**Where I'd honestly still reach for something else:**
+
+- **Python**, without hesitation, for anything ML/data-related — this
+  project's matching logic is simple arithmetic; if it needed real modeling,
+  Go's ecosystem there is nowhere near PyTorch/scikit-learn.
+- **JavaScript/TypeScript**, if the project needed a frontend sharing types
+  or code with the backend — Go doesn't help there at all.
+- **Java**, for something needing its more mature ecosystem of enterprise
+  tooling (this is closer to my Persistent Systems experience — Spring Boot,
+  JPA — than anything this project needed).
+
+The honest reason to build this in Go specifically was to get real,
+hands-on concurrency experience in a language built around it as a first-
+class feature, rather than bolting concurrency onto a language where it's
+more of an afterthought.
+
 ## How a request flows through the service
 
 ```mermaid
 flowchart LR
     Client -->|POST /shipments| API[API Server]
-    API -->|geocode address| Nominatim[OpenStreetMap<br/>Nominatim API]
-    Nominatim -->|lat/lon| API
-    API -->|save| Store[(In-Memory Store)]
+    API -->|check cache| Cache{Geocode<br/>Cache}
+    Cache -->|miss| Nominatim[OpenStreetMap<br/>Nominatim API]
+    Nominatim -->|lat/lon| Cache
+    Cache -->|hit or miss result| API
+    API -->|save| Store[(SQLite File)]
 
     Client -->|GET shipment matches| API
     API -->|submit job| Pool[Worker Pool<br/>goroutines]
@@ -77,7 +101,7 @@ sequenceDiagram
     participant S as Server (handlers.go)
     participant W as Worker Pool (worker.go)
     participant M as Matcher (matcher.go)
-    participant D as Store (store.go)
+    participant D as Store (sqlite_store.go)
 
     C->>S: GET /shipments/{id}/matches
     S->>D: GetShipment(id)
@@ -138,7 +162,7 @@ Worth knowing before relying on this for anything beyond a demo:
 | Piece | What's here | What a production version would need |
 |---|---|---|
 | Geocoding | Real call to OpenStreetMap's Nominatim API, with an in-memory cache in front of it (`cache.go`) so repeat lookups don't re-hit the rate-limited API | A shared cache (Redis) if this ran as multiple instances — a single process's in-memory cache doesn't help a second instance |
-| Storage | In-memory map, one `Store` interface (`store.go`) | Postgres, behind the same interface — the seam is already there |
+| Storage | Real SQLite file (`sqlite_store.go`), persists across restarts. In-memory `MemStore` still available for disposable test runs | Postgres, behind the same `Store` interface, if this ever needed to run as more than one instance |
 | Async matching | Real goroutines + channels (`worker.go`) | A durable queue (Kafka/Redis) — jobs here are lost on restart |
 | Scoring | Distance + capacity only (`matcher.go`) | Would also weigh price, reliability, appointment availability |
 | Frontend | Real, type-checked TypeScript (`frontend/`) — no framework, compiled with `tsc` | Works locally; no build pipeline/bundler/deployment story beyond that |
@@ -212,9 +236,45 @@ Requires Go 1.22+ (uses the standard library's built-in method+path routing —
 no third-party router needed).
 
 ```bash
+go mod tidy    # fetches the SQLite driver — needs network access
 go build ./...
 go run .
 ```
+
+## Storage: SQLite (real, persistent)
+
+Data is stored in a real SQLite file (`carrier_match.db`, created
+automatically on first run) — not in memory. It survives restarts, unlike
+the earlier in-memory version of this project. `sqlite_store.go` implements
+the same `Store` interface `MemStore` (still in `store.go`) does, so nothing
+else in the app had to change.
+
+**Prove to yourself it's actually persistent**, rather than taking it on faith:
+```bash
+go run .                          # terminal 1 — starts the server
+./seed.sh                         # terminal 2 — adds sample carriers
+# now Ctrl+C the server in terminal 1, then:
+go run .                          # start it again
+curl localhost:8080/carriers      # the carriers are still there
+```
+
+If you want a truly disposable/in-memory run for quick testing (no file left
+behind), that's what `MemStore` in `store.go` is still there for — swapping
+`NewSQLiteStore(dbPath)` for `NewMemStore()` in `main.go` reverts to it.
+
+### Quick start with sample data
+
+```bash
+./seed.sh
+```
+
+This registers 5 sample carriers across different cities, creates one
+sample shipment, and prints the ranked matches — everything you need to see
+the whole pipeline working in one command. Requires the server already
+running in another terminal (`go run .`). Re-run it any time after a
+restart, since the in-memory store won't have survived.
+
+### Manual requests
 
 ```bash
 curl -X POST localhost:8080/carriers \
@@ -235,3 +295,12 @@ rate-limits you):
 go test ./...
 ```
 
+## Why the boundaries are where they are
+
+Every "simplified" row in the table above was a deliberate choice to keep
+the finished parts of this project genuinely correct and tested, rather than
+spreading the same effort across a much larger, partly-untested surface
+area. The `Store` interface and the worker pool's `Submit()` function are
+the two seams built specifically for extending this later — swapping in
+Postgres or a real queue means implementing against those, not rewriting the
+rest of the app.
