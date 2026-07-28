@@ -28,23 +28,25 @@ func haversineDistanceMi(lat1, lon1, lat2, lon2 float64) float64 {
 // scoreCarrier produces a MatchResult for a single carrier against a shipment.
 //
 // Scoring approach (deliberately simple and explainable, not a black box):
-//   - Infeasible immediately if the carrier's capacity can't cover the
+//   - Infeasible immediately if the carrier is already booked on another
+//     active shipment (IsAvailable=false), or if capacity can't cover the
 //     shipment's weight — score 0, Feasible=false, still returned so the
 //     caller can see it was considered and why it was excluded.
 //   - Otherwise, score is inversely proportional to distance: closer
 //     carriers score higher. Capped distance influence at 500mi so a
 //     carrier 2,000mi away doesn't score meaningfully different from one
 //     600mi away — both are "far," and finer-grained scoring there isn't
-//     useful without also weighing e.g. carrier reliability, price, or
-//     appointment availability (explicitly out of scope for this project;
-//     see README).
+//     useful without also weighing e.g. carrier reliability or appointment
+//     availability (explicitly out of scope for this project; see README).
+//   - EstimatedPriceUSD is a placeholder formula (pricing.go), included so
+//     a price is visible before dispatch, not a claim about real market rates.
 func scoreCarrier(carrier Carrier, shipment Shipment) MatchResult {
 	result := MatchResult{
 		CarrierID:   carrier.ID,
 		CarrierName: carrier.Name,
 	}
 
-	if carrier.CapacityLbs < shipment.WeightLbs {
+	if !carrier.IsAvailable || carrier.CapacityLbs < shipment.WeightLbs {
 		result.Feasible = false
 		result.Score = 0
 		return result
@@ -56,6 +58,7 @@ func scoreCarrier(carrier Carrier, shipment Shipment) MatchResult {
 	)
 	result.DistanceMi = math.Round(dist*10) / 10
 	result.Feasible = true
+	result.EstimatedPriceUSD = estimatePriceUSD(dist, shipment.WeightLbs)
 
 	cappedDist := math.Min(dist, 500)
 	result.Score = math.Round((1 - cappedDist/500) * 1000) / 10 // 0-100 scale, 1 decimal

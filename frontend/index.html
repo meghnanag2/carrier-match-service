@@ -11,7 +11,17 @@
 
   <div class="grid">
     <section>
-      <h2>1. Register a Carrier</h2>
+      <h2>1. Register a Shipper</h2>
+      <form id="shipper-form">
+        <label>Name <input type="text" name="name" required /></label>
+        <label>Email <input type="email" name="email" required /></label>
+        <button type="submit">Add Shipper</button>
+      </form>
+      <p id="shipper-status"></p>
+    </section>
+
+    <section>
+      <h2>2. Register Carriers</h2>
       <form id="carrier-form">
         <label>Name <input type="text" name="name" required /></label>
         <label>Address <input type="text" name="address" placeholder="Chicago, IL" required /></label>
@@ -24,7 +34,8 @@
     </section>
 
     <section>
-      <h2>2. Register a Shipment</h2>
+      <h2>3. Register a Shipment</h2>
+      <p class="hint">Requires a shipper registered above first.</p>
       <form id="shipment-form">
         <label>Origin address <input type="text" name="origin_address" placeholder="Denver, CO" required /></label>
         <label>Weight (lbs) <input type="number" name="weight_lbs" required /></label>
@@ -35,12 +46,16 @@
     </section>
 
     <section>
-      <h2>3. Find Matches</h2>
+      <h2>4. Find Matches &amp; Dispatch</h2>
       <form id="match-form">
         <label>Shipment ID <input type="text" name="shipment_id" placeholder="Leave blank to use the last shipment created" /></label>
         <button type="submit">Get Matches</button>
       </form>
       <div id="match-results"></div>
+    </section>
+
+    <section id="tracking-section" style="display: none;">
+      <h2>5. Track Shipment</h2>
     </section>
   </div>
 

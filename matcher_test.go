@@ -29,7 +29,7 @@ func TestHaversineDistance_SamePoint(t *testing.T) {
 }
 
 func TestScoreCarrier_InfeasibleWhenUnderCapacity(t *testing.T) {
-	carrier := Carrier{ID: "c1", Name: "Test Carrier", Lat: 40.0, Lon: -75.0, CapacityLbs: 5000}
+	carrier := Carrier{ID: "c1", Name: "Test Carrier", Lat: 40.0, Lon: -75.0, CapacityLbs: 5000, IsAvailable: true}
 	shipment := Shipment{OriginLat: 40.0, OriginLon: -75.0, WeightLbs: 10000}
 
 	result := scoreCarrier(carrier, shipment)
@@ -42,11 +42,22 @@ func TestScoreCarrier_InfeasibleWhenUnderCapacity(t *testing.T) {
 	}
 }
 
+func TestScoreCarrier_InfeasibleWhenAlreadyBooked(t *testing.T) {
+	carrier := Carrier{ID: "c1", Name: "Test Carrier", Lat: 40.0, Lon: -75.0, CapacityLbs: 50000, IsAvailable: false}
+	shipment := Shipment{OriginLat: 40.0, OriginLon: -75.0, WeightLbs: 1000}
+
+	result := scoreCarrier(carrier, shipment)
+
+	if result.Feasible {
+		t.Error("expected Feasible=false for a carrier that's already booked (IsAvailable=false), even with plenty of capacity")
+	}
+}
+
 func TestScoreCarrier_CloserCarrierScoresHigher(t *testing.T) {
 	shipment := Shipment{OriginLat: 40.0, OriginLon: -75.0, WeightLbs: 1000}
 
-	near := Carrier{ID: "near", Lat: 40.1, Lon: -75.1, CapacityLbs: 5000}
-	far := Carrier{ID: "far", Lat: 45.0, Lon: -80.0, CapacityLbs: 5000}
+	near := Carrier{ID: "near", Lat: 40.1, Lon: -75.1, CapacityLbs: 5000, IsAvailable: true}
+	far := Carrier{ID: "far", Lat: 45.0, Lon: -80.0, CapacityLbs: 5000, IsAvailable: true}
 
 	nearResult := scoreCarrier(near, shipment)
 	farResult := scoreCarrier(far, shipment)
@@ -60,8 +71,8 @@ func TestScoreCarrier_CloserCarrierScoresHigher(t *testing.T) {
 func TestRankCarriers_FeasibleSortedBeforeInfeasible(t *testing.T) {
 	shipment := Shipment{OriginLat: 40.0, OriginLon: -75.0, WeightLbs: 10000}
 	carriers := []Carrier{
-		{ID: "too-small", Lat: 40.0, Lon: -75.0, CapacityLbs: 5000},   // infeasible
-		{ID: "big-enough", Lat: 41.0, Lon: -76.0, CapacityLbs: 20000}, // feasible
+		{ID: "too-small", Lat: 40.0, Lon: -75.0, CapacityLbs: 5000, IsAvailable: true},   // infeasible (capacity)
+		{ID: "big-enough", Lat: 41.0, Lon: -76.0, CapacityLbs: 20000, IsAvailable: true}, // feasible
 	}
 
 	ranked := RankCarriers(carriers, shipment)

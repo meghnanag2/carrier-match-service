@@ -21,7 +21,16 @@ func main() {
 
 	geocoder := NewGeocoder()
 	workers := NewMatchWorkerPool(store, 4 /* workers */, 100 /* queue size */)
-	server := NewServer(store, geocoder, workers)
+
+	var payments *PaymentClient
+	if stripeKey := os.Getenv("STRIPE_SECRET_KEY"); stripeKey != "" {
+		payments = NewPaymentClient(stripeKey)
+		log.Println("Stripe payments enabled (test mode key detected)")
+	} else {
+		log.Println("STRIPE_SECRET_KEY not set — dispatch/delivery will skip payment authorization/capture")
+	}
+
+	server := NewServer(store, geocoder, workers, payments)
 
 	mux := http.NewServeMux()
 	// Go 1.22+ ServeMux supports method + path-variable patterns natively —
@@ -29,8 +38,11 @@ func main() {
 	mux.HandleFunc("GET /health", server.handleHealth)
 	mux.HandleFunc("POST /carriers", server.handleCreateCarrier)
 	mux.HandleFunc("GET /carriers", server.handleListCarriers)
+	mux.HandleFunc("POST /shippers", server.handleCreateShipper)
 	mux.HandleFunc("POST /shipments", server.handleCreateShipment)
 	mux.HandleFunc("GET /shipments/{id}/matches", server.handleGetMatches)
+	mux.HandleFunc("POST /shipments/{id}/dispatch", server.handleDispatch)
+	mux.HandleFunc("PATCH /shipments/{id}/status", server.handleUpdateStatus)
 
 	addr := ":8080"
 	log.Printf("carrier-match-service listening on %s", addr)
