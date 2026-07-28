@@ -1,6 +1,6 @@
 # carrier-match-service
 
-A small Go backend service that matches and scores freight carriers against
+A Go backend service that matches and scores freight carriers against
 shipments. Built as a hands-on Go project, shaped around a real problem a
 freight/logistics marketplace backend has to solve: given a shipment, which
 of your available carriers can actually take it, and which is the best fit?
